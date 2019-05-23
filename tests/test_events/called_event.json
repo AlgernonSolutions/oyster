@@ -1,0 +1,8 @@
+{
+  "task_name": "test_task",
+  "flow_id": "test_state_manager#basic_test",
+  "run_id": "1001",
+  "task_kwargs": {
+    "id_source": "Algernon"
+  }
+}

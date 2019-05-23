@@ -1,0 +1,20 @@
+{
+  "flow_run_id": "test_state_manager#basic_test#1001",
+  "state_id": "20906b16-fa5f-4ba6-955c-6e11ebb4309a",
+  "state_type": "EventFailed",
+  "state_timestamp": 1558539556,
+  "state_properties": [
+    {
+      "property_name": "task_name",
+      "property_value": "test_task"
+    },
+    {
+      "property_name": "task_kwargs",
+      "property_value": "{\"id_source\": \"Algernon\"}"
+    },
+    {
+      "property_name": "failure_details",
+      "property_value": "{\"cause\": \"some failure reason here\"}"
+    }
+  ]
+}
