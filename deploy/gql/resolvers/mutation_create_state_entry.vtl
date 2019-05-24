@@ -1,0 +1,16 @@
+{
+  "version": "2017-02-28",
+  "operation": "PutItem",
+  "key": {
+    "flow_run_id": $util.dynamodb.toDynamoDBJson($ctx.args.input.flow_run_id),
+    "state_id": $util.dynamodb.toDynamoDBJson($util.autoId())
+  },
+  "attributeValues": $util.dynamodb.toMapValuesJson($ctx.args.input),
+  "condition": {
+    "expression": "attribute_not_exists(#flow_run_id) AND attribute_not_exists(#state_id)",
+    "expressionNames": {
+      "#flow_run_id": "flow_run_id",
+      "#state_id": "state_id",
+    },
+  },
+}

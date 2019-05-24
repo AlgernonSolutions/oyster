@@ -1,0 +1,16 @@
+{
+  "version": "2017-02-28",
+  "operation": "PutItem",
+  "key": {
+    "task_module": $util.dynamodb.toDynamoDBJson($ctx.args.input.task_module),
+    "task_name": $util.dynamodb.toDynamoDBJson($ctx.args.input.task_name)
+  },
+  "attributeValues": $util.dynamodb.toMapValuesJson($ctx.args.input),
+  "condition": {
+    "expression": "attribute_not_exists(#task_module) AND attribute_not_exists(#task_name)",
+    "expressionNames": {
+      "#task_module": "task_module",
+      "#task_name": "task_name",
+    },
+  },
+}

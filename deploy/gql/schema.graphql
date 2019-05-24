@@ -1,0 +1,161 @@
+input CreateStateEntryInput {
+	flow_run_id: String!
+	state_type: String!
+	state_timestamp: AWSTimestamp!
+	state_properties: [InputStateProperty!]!
+}
+
+input CreateTaskRegistrationInput {
+	task_module: String!
+	task_name: String!
+	task_fn_arn: String!
+	task_description: String
+}
+
+input DeleteStateEntryInput {
+	flow_run_id: String!
+	state_id: String!
+}
+
+input DeleteTaskRegistrationInput {
+	task_module: String!
+	task_name: String!
+}
+
+input InputStateProperty {
+	property_name: String!
+	property_value: String!
+}
+
+type Mutation {
+	createStateEntry(input: CreateStateEntryInput!): StateEntry
+	updateStateEntry(input: UpdateStateEntryInput!): StateEntry
+	deleteStateEntry(input: DeleteStateEntryInput!): StateEntry
+	createTaskRegistration(input: CreateTaskRegistrationInput!): TaskRegistration
+	updateTaskRegistration(input: UpdateTaskRegistrationInput!): TaskRegistration
+	deleteTaskRegistration(input: DeleteTaskRegistrationInput!): TaskRegistration
+}
+
+type Query {
+	getStateEntry(flow_run_id: String!, state_id: String!): StateEntry
+	listStateEntries(filter: TableStateEntryFilterInput, limit: Int, nextToken: String): StateEntryConnection
+	getTaskRegistration(task_module: String!, task_name: String!): TaskRegistration
+	listTaskRegistrations(filter: TableStateEntryFilterInput, limit: Int, nextToken: String): StateEntryConnection
+}
+
+type StateEntry {
+	flow_run_id: String!
+	state_id: String!
+	state_type: String!
+	state_timestamp: AWSTimestamp!
+	state_properties: [StateProperty]!
+}
+
+type StateEntryConnection {
+	items: [StateEntry]
+	nextToken: String
+}
+
+type StateProperty {
+	property_name: String!
+	property_value: String!
+}
+
+type Subscription {
+	onCreateStateEntry(flow_run_id: String, state_id: String): StateEntry
+		@aws_subscribe(mutations: ["createStateEntry"])
+	onUpdateStateEntry(flow_run_id: String, state_id: String): StateEntry
+		@aws_subscribe(mutations: ["updateStateEntry"])
+	onDeleteStateEntry(flow_run_id: String, state_id: String): StateEntry
+		@aws_subscribe(mutations: ["deleteStateEntry"])
+	onCreateTaskRegistration(task_module: String, task_name: String): TaskRegistration
+		@aws_subscribe(mutations: ["createTaskRegistration"])
+	onUpdateTaskRegistration(task_module: String, task_name: String): TaskRegistration
+		@aws_subscribe(mutations: ["updateTaskRegistration"])
+	onDeleteTaskRegistration(task_module: String, task_name: String): TaskRegistration
+		@aws_subscribe(mutations: ["deleteTaskRegistration"])
+}
+
+input TableBooleanFilterInput {
+	ne: Boolean
+	eq: Boolean
+}
+
+input TableFloatFilterInput {
+	ne: Float
+	eq: Float
+	le: Float
+	lt: Float
+	ge: Float
+	gt: Float
+	contains: Float
+	notContains: Float
+	between: [Float]
+}
+
+input TableIDFilterInput {
+	ne: ID
+	eq: ID
+	le: ID
+	lt: ID
+	ge: ID
+	gt: ID
+	contains: ID
+	notContains: ID
+	between: [ID]
+	beginsWith: ID
+}
+
+input TableIntFilterInput {
+	ne: Int
+	eq: Int
+	le: Int
+	lt: Int
+	ge: Int
+	gt: Int
+	contains: Int
+	notContains: Int
+	between: [Int]
+}
+
+input TableStateEntryFilterInput {
+	flow_run_id: TableStringFilterInput
+	state_id: TableStringFilterInput
+}
+
+input TableStringFilterInput {
+	ne: String
+	eq: String
+	le: String
+	lt: String
+	ge: String
+	gt: String
+	contains: String
+	notContains: String
+	between: [String]
+	beginsWith: String
+}
+
+type TaskRegistration {
+	task_module: String!
+	task_name: String!
+	task_fn_arn: String!
+	task_description: String
+}
+
+type TaskRegistrationConnection {
+	items: [TaskRegistration]
+	nextToken: String
+}
+
+input UpdateStateEntryInput {
+	flow_run_id: String!
+	state_id: String!
+}
+
+input UpdateTaskRegistrationInput {
+	task_module: String!
+	task_name: String!
+	task_fn_arn: String
+	task_description: String
+}

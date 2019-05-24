@@ -76,6 +76,17 @@ def timed_out_event_history():
 
 
 @pytest.fixture
+def completed_event_history():
+    history = [
+        StateEventGenerator().state_event,
+        StateEventGenerator(state_type='EventFailed').state_event,
+        StateEventGenerator().state_event,
+        StateEventGenerator(state_type='EventCompleted').state_event,
+    ]
+    return history
+
+
+@pytest.fixture
 def failed_event_history():
     history = [
         StateEventGenerator().state_event,

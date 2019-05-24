@@ -1,0 +1,8 @@
+{
+  "version": "2017-02-28",
+  "operation": "DeleteItem",
+  "key": {
+    "task_module": $util.dynamodb.toDynamoDBJson($ctx.args.input.task_module),
+    "task_name": $util.dynamodb.toDynamoDBJson($ctx.args.input.task_name),
+  },
+}

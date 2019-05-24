@@ -1,0 +1,163 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Metadata:
+  AWS::ServerlessRepo::Application:
+    Name: AlgernonOyster
+    Description: a state tracker for serverless event driven workflows
+    Author: algernon_solutions/jcubeta
+    SpdxLicenseId: AGPL-3.0
+    LicenseUrl: LICENSE
+    ReadmeUrl: README.md
+    Labels: ['algernon']
+    HomePageUrl: https://github.com/AlgernonSolutions/oyster.git
+    SemanticVersion: 0.0.1
+    SourceCodeUrl: https://github.com/AlgernonSolutions/oyster.git
+
+Parameters:
+  IsDev:
+    Type: String
+    Default: 'False'
+    AllowedValues:
+      - 'False'
+      - 'True'
+  GqlApiName:
+    Type: String
+    Description: the name applied to the GQL API
+  LayerArn:
+    Type: String
+    Description: the lambda layer containing the common dependencies
+    Default: 'arn:aws:lambda:us-east-1:726075243133:layer:algLayer:4'
+  StateTableName:
+    Type: String
+    Description: the name applied to the dynamo table used to hold the states, if left blank one will be generated
+    Default: ''
+  StateTableWorkerRoleArn:
+    Type: String
+    Description: the IAM role used to interact with the state table
+  TaskTableName:
+    Type: String
+    Description: the name applied to the dynamo table used to hold the registered tasks, if left blank one will be generated
+    Default: ''
+  TaskTableWorkerRoleArn:
+    Type: String
+    Description: the IAM role used to interact with the state table
+
+Conditions:
+  DevDeploy: !Equals [!Ref IsDev, 'True']
+  ProdDeploy: !Equals [!Ref IsDev, 'False']
+  GenerateStateTableName: !Equals [!Ref StateTableName, '']
+  GenerateTaskTableName: !Equals [!Ref TaskTableName, '']
+
+Globals:
+  Function:
+    Runtime: python3.7
+    Timeout: 300
+    Tracing: Active
+
+Resources:
+  IamStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        StateTableArn: !GetATt StateTable.Arn
+        StateApiArn: !GetAtt StateApi.Outputs.ApiArn
+        TaskTableArn: !GetAtt TaskTable.Arn
+      TemplateURL: deploy/iam/iam_template.yaml
+  StateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !If [GenerateStateTableName, !Sub "AlgernonStates-${AWS::StackName}", !Ref StateTableName]
+      AttributeDefinitions:
+        - AttributeName: flow_run_id
+          AttributeType: S
+        - AttributeName: state_id
+          AttributeType: S
+        - AttributeName: state_timestamp
+          AttributeType: N
+        - AttributeName: state_type
+          AttributeType: S
+        - AttributeName: state_properties
+          AttributeType: L
+      KeySchema:
+        - AttributeName: flow_run_id
+          KeyType: HASH
+        - AttributeName: state_id
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+  TaskTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !If [GenerateStateTableName, !Sub "AlgernonTasks-${AWS::StackName}", !Ref StateTableName]
+      AttributeDefinitions:
+        - AttributeName: task_module
+          AttributeType: S
+        - AttributeName: task_name
+          AttributeType: S
+        - AttributeName: task_fn_arn
+          AttributeType: S
+        - AttributeName: task_description
+          AttributeType: S
+      KeySchema:
+        - AttributeName: task_module
+          KeyType: HASH
+        - AttributeName: task_name
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+      SSESpecification:
+        SSEEnabled: true
+  OysterTask:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Role: !GetAtt IamStack.Outputs.WorkerRoleArn
+      Handler: toll_booth.tasks.handler
+      Events:
+        InvokeApi:
+          Type: Api
+          Properties:
+            Path: /work
+            Method: get
+  StateApi:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      Parameters:
+        IsDev: !Ref IsDev
+        GqlApiName: !Ref GqlApiName
+        StateTableName: !Ref StateTable
+        StateTableWorkerRoleArn: !Ref StateTableWorkerRoleArn
+        TaskTableName: !Ref TaskTable
+        TaskTableWorkerRoleArn: !Ref TaskTableWorkerRoleArn
+      TemplateURL: deploy/gql/gql_template.yaml
+
+Outputs:
+  OysterApi:
+    Description: "API Gateway endpoint URL for Prod stage for work function"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/work/"
+  OysterFnArn:
+    Description: "Oyster Lambda Function ARN"
+    Value: !GetAtt OysterTask.Arn
+  StateTableArn:
+    Description: the ARN of the Dynamo table used to hold event states for the Oyster
+    Value: !GetAtt StateTable.Arn
+  TaskTableArn:
+    Description: the ARN of the Dynamo table used to register tasks for the Oyster
+    Value: !GetAtt TaskTable.Arn
+  GqlApiId:
+    Description: the ID generated for the API
+    Value: !GetAtt StateApi.Outputs.ApiId
+  StateApiArn:
+    Description: the ARN assigned to the API
+    Value: !GetAtt StateApi.Outputs.ApiArn
+  StateApiUrl:
+    Description: the URL assigned to the generated API
+    Value: !GetAtt StateApi.Outputs.ApiUrl
+  StateApiKeyValue:
+    Condition: DevDeploy
+    Description: if dev mode is set, the API key generated for testing
+    Value: !GetAtt StateApi.Outputs.ApiKeyValue
+  WorkerRoleArn:
+    Description: the ARN of the generated IAM role
+    Value: !GetAtt IamStack.Outputs.WorkerRoleArn
