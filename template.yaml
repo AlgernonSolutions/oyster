@@ -5,7 +5,7 @@ Metadata:
   AWS::ServerlessRepo::Application:
     Name: AlgernonOyster
     Description: a state tracker for serverless event driven workflows
-    Author: algernon_solutions/jcubeta
+    Author: algernonsolutions
     SpdxLicenseId: AGPL-3.0
     LicenseUrl: LICENSE
     ReadmeUrl: README.md
@@ -21,9 +21,20 @@ Parameters:
     AllowedValues:
       - 'False'
       - 'True'
+  TaskFunctionArn:
+    Type: String
+    Description: the ARN of the task to be run by this oyster
+  ReservedConcurrency:
+    Type: Number
+    Description: if you want to limit the concurrency for this Oyster, specify a reserved concurrency here
+    Default: 0
   GqlApiName:
     Type: String
     Description: the name applied to the GQL API
+  GqlApiArn:
+    Type: String
+    Description: to use an existing oytser bed, specify the ARN here
+    Default: ''
   LayerArn:
     Type: String
     Description: the lambda layer containing the common dependencies
@@ -32,22 +43,21 @@ Parameters:
     Type: String
     Description: the name applied to the dynamo table used to hold the states, if left blank one will be generated
     Default: ''
-  StateTableWorkerRoleArn:
-    Type: String
-    Description: the IAM role used to interact with the state table
   TaskTableName:
     Type: String
     Description: the name applied to the dynamo table used to hold the registered tasks, if left blank one will be generated
     Default: ''
-  TaskTableWorkerRoleArn:
+  LambdaRoleArn:
     Type: String
-    Description: the IAM role used to interact with the state table
+    Description: the ARN of an IAM role, assumable by lambda, to execute the operation, leave blank if this is the first task
 
 Conditions:
   DevDeploy: !Equals [!Ref IsDev, 'True']
   ProdDeploy: !Equals [!Ref IsDev, 'False']
   GenerateStateTableName: !Equals [!Ref StateTableName, '']
   GenerateTaskTableName: !Equals [!Ref TaskTableName, '']
+  BuildOysterBed: !Equals [!Ref GqlApiArn, '']
+
 
 Globals:
   Function:
@@ -56,16 +66,259 @@ Globals:
     Tracing: Active
 
 Resources:
-  IamStack:
-    Type: AWS::CloudFormation::Stack
+  OysterBed:
+    Type: AWS::Serverless::Application
+    Condition: BuildOysterBed
     Properties:
+      Location:
+        ApplicationId: arn:aws:serverlessrepo:us-east-1:726075243133:applications/AlgernonOysterBed
+        SemanticVersion: 0.0.1
       Parameters:
-        StateTableArn: !GetATt StateTable.Arn
-        StateApiArn: !GetAtt StateApi.Outputs.ApiArn
-        TaskTableArn: !GetAtt TaskTable.Arn
-      TemplateURL: deploy/iam/iam_template.yaml
+        IsDev: !Ref IsDev
+        GqlApiName: !Ref GqlApiName
+        StateTableName: !Ref StateTableName
+        StateTableRegion: !Ref 'AWS::Region'
+        TaskTableName: !Ref TaskTableName
+        TaskTableRegion: !Ref 'AWS::Region'
+        StateTableWorkerROleArn: !GetAtt worker.Arn
+        TaskTableWorkerRoleArn: !GetAtt worker.Arn
+        LogWorkerRoleArn: !GetAtt worker.Arn
+  ShuckLine:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location:
+        ApplicationId: arn:aws:serverlessrepo:us-east-1:726075243133:applications~AlgernonShuckLine
+        SemanticVersion: 0.0.1
+  writeXray:
+    Type: 'AWS::IAM::Policy'
+    Condition: BuildOysterBed
+    Properties:
+      PolicyName: !Sub "writeXray-${AWS::StackName}"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'xray:PutTraceSegments'
+              - 'xray:PutTelemetryRecords'
+              - 'xray:GetSamplingRules'
+              - 'xray:GetSamplingTargets'
+              - 'xray:GetSamplingStatisticSummaries'
+            Resource: '*'
+            Effect: Allow
+      Roles:
+        - !Ref worker
+  worker:
+    Type: 'AWS::IAM::Role'
+    Condition: BuildOysterBed
+    Properties:
+      RoleName: !Sub "worker-${AWS::StackName}"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action: 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service:
+                - appsync.amazonaws.com
+                - events.amazonaws.com
+                - lambda.amazonaws.com
+  workLogs:
+    Type: 'AWS::IAM::Policy'
+    Condition: BuildOysterBed
+    Properties:
+      PolicyName: !Sub "workLogs-${AWS::StackName}"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'logs:*'
+            Resource: '*'
+            Effect: Allow
+      Roles:
+        - !Ref worker
+  invokeLambda:
+    Type: 'AWS::IAM::Policy'
+    Condition: BuildOysterBed
+    Properties:
+      PolicyName: !Sub "invokeLambda-${AWS::StackName}"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'lambda:InvokeFunction'
+            Resource: '*'
+            Effect: Allow
+      Roles:
+        - !Ref worker
+  workStateTable:
+    Type: 'AWS::IAM::Policy'
+    Condition: BuildOysterBed
+    Properties:
+      PolicyName: !Sub "workStateTable-${AWS::StackName}"
+      PolicyDocument: >
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "dynamodb:Scan",
+                        "dynamodb:Query"
+                    ],
+                    "Resource": !Join [[!GetAtt StateTable.Arn, "/index/*"]]
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "dynamodb:BatchGetItem",
+                        "dynamodb:BatchWriteItem",
+                        "dynamodb:UpdateTimeToLive",
+                        "dynamodb:ConditionCheckItem",
+                        "dynamodb:PutItem",
+                        "dynamodb:DescribeTable",
+                        "dynamodb:DeleteItem",
+                        "dynamodb:GetItem",
+                        "dynamodb:Scan",
+                        "dynamodb:Query",
+                        "dynamodb:UpdateItem",
+                        "dynamodb:DescribeTimeToLive"
+                    ],
+                    "Resource": !GetAtt StateTable.Arn
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "dynamodb:ListGlobalTables",
+                        "dynamodb:ListTables",
+                        "dynamodb:ListBackups",
+                        "dynamodb:DescribeLimits"
+                    ],
+                    "Resource": "*"
+                }
+            ]
+        }
+      Roles:
+        - !Ref worker
+  workTaskTable:
+    Type: 'AWS::IAM::Policy'
+    Condition: BuildOysterBed
+    Properties:
+      PolicyName: !Sub "workTaskTable-${AWS::StackName}"
+      PolicyDocument: >
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": [
+              "dynamodb:Scan",
+              "dynamodb:Query"
+            ],
+            "Resource": !Join [[!GetAtt TaskTable.Arn, "/index/*"]]
+          },
+          {
+            "Effect": "Allow",
+            "Action": [
+              "dynamodb:BatchGetItem",
+              "dynamodb:BatchWriteItem",
+              "dynamodb:UpdateTimeToLive",
+              "dynamodb:ConditionCheckItem",
+              "dynamodb:PutItem",
+              "dynamodb:DescribeTable",
+              "dynamodb:DeleteItem",
+              "dynamodb:GetItem",
+              "dynamodb:Scan",
+              "dynamodb:Query",
+              "dynamodb:UpdateItem",
+              "dynamodb:DescribeTimeToLive"
+            ],
+            "Resource": !GetAtt TaskTable.Arn
+          },
+          {
+            "Effect": "Allow",
+            "Action": [
+              "dynamodb:ListGlobalTables",
+              "dynamodb:ListTables",
+              "dynamodb:ListBackups",
+              "dynamodb:DescribeLimits"
+            ],
+            "Resource": "*"
+          }
+          ]
+        }
+      Roles:
+        - !Ref worker
+  queryGql:
+    Type: 'AWS::IAM::Policy'
+    Condition: BuildOysterBed
+    Properties:
+      PolicyName: !Sub "queryGql-${AWS::StackName}"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'appsync:ListDataSources'
+              - 'appsync:ListFunctions'
+              - 'appsync:GetDataSource'
+              - 'appsync:ListApiKeys'
+              - 'appsync:GetSchemaCreationStatus'
+              - 'appsync:GetFunction'
+              - 'appsync:GetResolver'
+              - 'appsync:ListGraphqlApis'
+              - 'appsync:GetGraphqlApi'
+              - 'appsync:ListTypes'
+              - 'appsync:GetIntrospectionSchema'
+              - 'appsync:GraphQL'
+              - 'appsync:ListResolvers'
+              - 'appsync:GetType'
+            Resource: !GetAtt OysterBed.Arn
+            Effect: Allow
+      Roles:
+        - !Ref worker
+  passRole:
+    Type: 'AWS::IAM::Policy'
+    Condition: BuildOysterBed
+    Properties:
+      PolicyName: !Sub "passRole-${AWS::StackName}"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action: 'iam:PassRole'
+            Resource: '*'
+            Effect: Allow
+      Roles:
+        - !Ref worker
+  workKeys:
+    Type: 'AWS::IAM::Policy'
+    Condition: BuildOysterBed
+    Properties:
+      PolicyName: !Sub "workKeys-${AWS::StackName}"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 'kms:Decrypt'
+              - 'kms:GenerateDataKey*'
+            Resource: '*'
+            Effect: Allow
+      Roles:
+        - !Ref worker
+  workSns:
+    Type: 'AWS::IAM::Policy'
+    Condition: BuildOysterBed
+    Properties:
+      PolicyName: !Sub "workSns-${AWS::StackName}"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action: 'sns:Publish'
+            Resource: '*'
+            Effect: Allow
+      Roles:
+        - !Ref worker
   StateTable:
     Type: AWS::DynamoDB::Table
+    Condition: BuildOysterBed
     Properties:
       TableName: !If [GenerateStateTableName, !Sub "AlgernonStates-${AWS::StackName}", !Ref StateTableName]
       AttributeDefinitions:
@@ -89,6 +342,7 @@ Resources:
         SSEEnabled: true
   TaskTable:
     Type: AWS::DynamoDB::Table
+    Condition: BuildOysterBed
     Properties:
       TableName: !If [GenerateStateTableName, !Sub "AlgernonTasks-${AWS::StackName}", !Ref StateTableName]
       AttributeDefinitions:
@@ -111,26 +365,28 @@ Resources:
   OysterTask:
     Type: AWS::Serverless::Function
     Properties:
+      Runtime: python3.7
+      ReservedConcurrentExecutions: !Ref ReservedConcurrency
+      MemorySize: 128
+      Tracing: Active
+      Timeout: 1500
       CodeUri: src/
-      Role: !GetAtt IamStack.Outputs.WorkerRoleArn
+      Role: !If [BuildOysterBed [!GetAtt worker.Arn, !Ref LambdaRoleArn]]
       Handler: toll_booth.tasks.handler
+      Environment:
+        Variables:
+          TASK_FUNCTION_ARN: !Ref TaskFunctionArn
       Events:
         InvokeApi:
           Type: Api
           Properties:
             Path: /work
             Method: get
-  StateApi:
-    Type: AWS::CloudFormation::Stack
-    Properties:
-      Parameters:
-        IsDev: !Ref IsDev
-        GqlApiName: !Ref GqlApiName
-        StateTableName: !Ref StateTable
-        StateTableWorkerRoleArn: !Ref StateTableWorkerRoleArn
-        TaskTableName: !Ref TaskTable
-        TaskTableWorkerRoleArn: !Ref TaskTableWorkerRoleArn
-      TemplateURL: deploy/gql/gql_template.yaml
+        Queued:
+          Type: SQS
+            Properties:
+              Queue: !GetAtt ShuckLine.Outputs.QueueArn
+              BatchSize: 10
 
 Outputs:
   OysterApi:
@@ -140,24 +396,33 @@ Outputs:
     Description: "Oyster Lambda Function ARN"
     Value: !GetAtt OysterTask.Arn
   StateTableArn:
+    Condition: BuildOysterBed
     Description: the ARN of the Dynamo table used to hold event states for the Oyster
     Value: !GetAtt StateTable.Arn
   TaskTableArn:
+    Condition: BuildOysterBed
     Description: the ARN of the Dynamo table used to register tasks for the Oyster
     Value: !GetAtt TaskTable.Arn
   GqlApiId:
+    Condition: BuildOysterBed
     Description: the ID generated for the API
-    Value: !GetAtt StateApi.Outputs.ApiId
-  StateApiArn:
+    Value: !GetAtt OysterBed.Outputs.ApiId
+  OysterBedArn:
+    Condition: BuildOysterBed
     Description: the ARN assigned to the API
-    Value: !GetAtt StateApi.Outputs.ApiArn
-  StateApiUrl:
+    Value: !GetAtt OysterBed.Outputs.Arn
+  OysterBedUrl:
+    Condition: BuildOysterBed
     Description: the URL assigned to the generated API
-    Value: !GetAtt StateApi.Outputs.ApiUrl
-  StateApiKeyValue:
+    Value: !GetAtt OysterBed.Outputs.ApiId
+  OysterBedKeyValue:
     Condition: DevDeploy
     Description: if dev mode is set, the API key generated for testing
-    Value: !GetAtt StateApi.Outputs.ApiKeyValue
+    Value: !GetAtt OysterBed.Outputs.ApiKeyValue
   WorkerRoleArn:
+    Condition: BuildOysterBed
     Description: the ARN of the generated IAM role
-    Value: !GetAtt IamStack.Outputs.WorkerRoleArn
+    Value: !GetAtt worker.Arn
+  ShuckLineListener:
+    Description: the ARN of the generated SNS topic
+    Value: !GetAtt ShuckLine.Outputs.ListenerArn

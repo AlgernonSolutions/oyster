@@ -1,3 +1,5 @@
+import os
+
 import boto3
 from algernon import ajson
 
@@ -26,7 +28,7 @@ class TaskManager:
 
     def _fire_lambda(self):
         return self._client.invoke(
-            FunctionName=self._task_name,
+            FunctionName=os.getenv('TASK_FUNCTION_ARN', self._task_name),
             InvocationType='RequestResponse',
             Payload=ajson.dumps(self.payload)
         )

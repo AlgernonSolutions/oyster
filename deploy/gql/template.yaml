@@ -1,5 +1,19 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
+
+Metadata:
+  AWS::ServerlessRepo::Application:
+    Name: AlgernonOysterBed
+    Description: the GQL persistence layer for Algernon's Oyster
+    Author: algernonsolutions
+    SpdxLicenseId: AGPL-3.0
+    LicenseUrl: LICENSE
+    ReadmeUrl: README.md
+    Labels: ['algernon']
+    HomePageUrl: https://github.com/AlgernonSolutions/oyster.git
+    SemanticVersion: 0.0.1
+    SourceCodeUrl: https://github.com/AlgernonSolutions/oyster.git
+
 Parameters:
   IsDev:
     Type: String
@@ -32,6 +46,9 @@ Parameters:
   TaskTableWorkerRoleArn:
     Type: String
     Description: the IAM role used to interact with the task table
+  LogWorkerRoleArn:
+    Type: String
+    Description: the IAM role used to interact with the logs for the API
 Conditions:
   DevDeploy: !Equals [!Ref IsDev, 'True']
   ProdDeploy: !Equals [!Ref IsDev, 'False']
@@ -42,7 +59,7 @@ Resources:
     Type: AWS::AppSync::ApiKey
     Condition: DevDeploy
     Properties:
-      ApiId: !GetAtt LeechApi.ApiId
+      ApiId: !GetAtt StateApi.ApiId
       Description: "the dev key, not for production use"
       Expires: 1577883600
   StateApi:
@@ -51,7 +68,7 @@ Resources:
       Name: !Sub "${GqlApiName}-${AWS::StackName}"
       AuthenticationType: !If [DevDeploy, API_KEY, AWS_IAM]
       LogConfig:
-        CloudWatchLogsRoleArn: !Ref TableWorkerRoleArn
+        CloudWatchLogsRoleArn: !Ref LogWorkerRoleArn
         FieldLogLevel: ALL
   StateDataSource:
     Type: "AWS::AppSync::DataSource"
@@ -86,13 +103,13 @@ Resources:
   StateSchema:
     Type: "AWS::AppSync::GraphQLSchema"
     Properties:
-      DefinitionS3Location: gql/schema.graphql
+      DefinitionS3Location: schema.graphql
       ApiId: !GetAtt StateApi.ApiId
   QueryGetStateEntry:
     Type: "AWS::AppSync::Resolver"
     Properties:
-      RequestMappingTemplateS3Location: gql/resolvers/query_get_state_entry.vtl
-      ResponseMappingTemplateS3Location: gql/resolvers/generic_lambda_response.vtl
+      RequestMappingTemplateS3Location: resolvers/query_get_state_entry.vtl
+      ResponseMappingTemplateS3Location: resolvers/generic_lambda_response.vtl
       TypeName: Query
       DataSourceName: !GetAtt StateDataSource.Name
       ApiId: !GetAtt StateApi.ApiId
@@ -101,8 +118,8 @@ Resources:
   QueryListStateEntries:
       Type: "AWS::AppSync::Resolver"
       Properties:
-        RequestMappingTemplateS3Location: gql/resolvers/query_list_state_entries.vtl
-        ResponseMappingTemplateS3Location: gql/resolvers/generic_lambda_response.vtl
+        RequestMappingTemplateS3Location: resolvers/query_list_state_entries.vtl
+        ResponseMappingTemplateS3Location: resolvers/generic_lambda_response.vtl
         TypeName: Query
         DataSourceName: !GetAtt StateDataSource.Name
         ApiId: !GetAtt StateApi.ApiId
@@ -111,18 +128,18 @@ Resources:
   MutationCreateStateEntry:
     Type: "AWS::AppSync::Resolver"
     Properties:
-      RequestMappingTemplateS3Location: gql/resolvers/mutation_create_state_entry.vtl
-      ResponseMappingTemplateS3Location: gql/resolvers/generic_lambda_response.vtl
+      RequestMappingTemplateS3Location: resolvers/mutation_create_state_entry.vtl
+      ResponseMappingTemplateS3Location: resolvers/generic_lambda_response.vtl
       TypeName: Mutation
       DataSourceName: !GetAtt StateDataSource.Name
-      ApiId: !GetAtt StateAPi.ApiId
+      ApiId: !GetAtt StateApi.ApiId
       FieldName: createStateEntry
       Kind: UNIT
   MutationDeleteStateEntry:
     Type: "AWS::AppSync::Resolver"
     Properties:
-      RequestMappingTemplateS3Location: gql/resolvers/mutation_delete_state_entry.vtl
-      ResponseMappingTemplateS3Location: gql/resolvers/generic_lambda_response.vtl
+      RequestMappingTemplateS3Location: resolvers/mutation_delete_state_entry.vtl
+      ResponseMappingTemplateS3Location: resolvers/generic_lambda_response.vtl
       TypeName: Mutation
       DataSourceName: !GetAtt StateDataSource.Name
       ApiId: !GetAtt StateApi.ApiId
@@ -131,8 +148,8 @@ Resources:
   MutationUpdateStateEntry:
     Type: "AWS::AppSync::Resolver"
     Properties:
-      RequestMappingTemplateS3Location: gql/resolvers/mutation_update_state_entry.vtl
-      ResponseMappingTemplateS3Location: gql/resolvers/generic_lambda_response.vtl
+      RequestMappingTemplateS3Location: resolvers/mutation_update_state_entry.vtl
+      ResponseMappingTemplateS3Location: resolvers/generic_lambda_response.vtl
       TypeName: Mutation
       DataSourceName: !GetAtt StateDataSource.Name
       ApiId: !GetAtt StateApi.ApiId
@@ -141,8 +158,8 @@ Resources:
   QueryGetTaskRegistration:
     Type: "AWS::AppSync::Resolver"
     Properties:
-      RequestMappingTemplateS3Location: gql/resolvers/query_get_task_registration.vtl
-      ResponseMappingTemplateS3Location: gql/resolvers/generic_lambda_response.vtl
+      RequestMappingTemplateS3Location: resolvers/query_get_task_registration.vtl
+      ResponseMappingTemplateS3Location: resolvers/generic_lambda_response.vtl
       TypeName: Query
       DataSourceName: !GetAtt TaskDataSource.Name
       ApiId: !GetAtt StateApi.ApiId
@@ -151,8 +168,8 @@ Resources:
   QueryListTaskRegistration:
       Type: "AWS::AppSync::Resolver"
       Properties:
-        RequestMappingTemplateS3Location: gql/resolvers/query_list_task_registrations.vtl
-        ResponseMappingTemplateS3Location: gql/resolvers/generic_lambda_response.vtl
+        RequestMappingTemplateS3Location: resolvers/query_list_task_registrations.vtl
+        ResponseMappingTemplateS3Location: resolvers/generic_lambda_response.vtl
         TypeName: Query
         DataSourceName: !GetAtt TaskDataSource.Name
         ApiId: !GetAtt StateApi.ApiId
@@ -161,18 +178,18 @@ Resources:
   MutationCreateTaskRegistration:
     Type: "AWS::AppSync::Resolver"
     Properties:
-      RequestMappingTemplateS3Location: gql/resolvers/mutation_create_task_registration.vtl
-      ResponseMappingTemplateS3Location: gql/resolvers/generic_lambda_response.vtl
+      RequestMappingTemplateS3Location: resolvers/mutation_create_task_registration.vtl
+      ResponseMappingTemplateS3Location: resolvers/generic_lambda_response.vtl
       TypeName: Mutation
       DataSourceName: !GetAtt TaskDataSource.Name
-      ApiId: !GetAtt StateAPi.ApiId
+      ApiId: !GetAtt StateApi.ApiId
       FieldName: createTaskRegistration
       Kind: UNIT
   MutationDeleteTaskRegistration:
     Type: "AWS::AppSync::Resolver"
     Properties:
-      RequestMappingTemplateS3Location: gql/resolvers/mutation_delete_task_registration.vtl
-      ResponseMappingTemplateS3Location: gql/resolvers/generic_lambda_response.vtl
+      RequestMappingTemplateS3Location: resolvers/mutation_delete_task_registration.vtl
+      ResponseMappingTemplateS3Location: resolvers/generic_lambda_response.vtl
       TypeName: Mutation
       DataSourceName: !GetAtt TaskDataSource.Name
       ApiId: !GetAtt StateApi.ApiId
@@ -181,8 +198,8 @@ Resources:
   MutationUpdateTaskRegistration:
     Type: "AWS::AppSync::Resolver"
     Properties:
-      RequestMappingTemplateS3Location: gql/resolvers/mutation_update_task_registration.vtl
-      ResponseMappingTemplateS3Location: gql/resolvers/generic_lambda_response.vtl
+      RequestMappingTemplateS3Location: resolvers/mutation_update_task_registration.vtl
+      ResponseMappingTemplateS3Location: resolvers/generic_lambda_response.vtl
       TypeName: Mutation
       DataSourceName: !GetAtt TaskDataSource.Name
       ApiId: !GetAtt StateApi.ApiId
